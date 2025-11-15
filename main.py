@@ -1,4 +1,5 @@
 import discord
+import base64
 from discord.ext import commands
 from config import ECONOMY_FILE, JOBS_FILE, GUILDS_FILE, ACHIEVEMENTS_FILE
 from managers import EconomyManager, JobsManager, GuildsManager, AchievementsManager
@@ -11,7 +12,8 @@ from dotenv import load_dotenv
 import os
 
 load_dotenv()
-TOKEN = os.getenv("TOKEN")
+encoded = os.getenv("TOKEN_B64")
+TOKEN = base64.b64decode(encoded).decode()
 
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix="!", intents=intents)
