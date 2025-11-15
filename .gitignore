@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Config files containing secrets
+config.json
+.env
+
+# VSCode
+.vscode/
+
+# thanks chatgpt my ass is lazy asf i was NOT tryna write ts gitignore
