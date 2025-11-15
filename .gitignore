@@ -11,4 +11,7 @@ config.json
 # VSCode
 .vscode/
 
+# uhh the read when update thing dont want git seein that thing :skull:
+READMEWHENYOUUPDATE.txt
+
 # thanks chatgpt my ass is lazy asf i was NOT tryna write ts gitignore
