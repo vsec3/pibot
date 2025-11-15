@@ -57,7 +57,7 @@ JOB_DATA = {
 }
 
 # Guild creation cost
-GUILD_CREATION_COST = 12500
+GUILD_CREATION_COST = 15000
 
 # Achievements
 ACHIEVEMENTS = {
