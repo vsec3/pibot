@@ -8,6 +8,13 @@ __pycache__/
 config.json
 # .env (for now unsafe but if issues arise i will safe it)
 
+# oldsaves
+achievements.json
+economy.json
+guilds.json
+jobs.json
+moddata.json
+
 # VSCode
 .vscode/
 
