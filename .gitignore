@@ -6,7 +6,7 @@ __pycache__/
 
 # Config files containing secrets
 config.json
-.env
+# .env (for now unsafe but if issues arise i will safe it)
 
 # VSCode
 .vscode/
