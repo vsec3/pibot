@@ -111,6 +111,11 @@ ACHIEVEMENTS = {
         "description": "Reach 10M Total",
         "reward": 10000,
     },
+    "naninf": {
+        "name": "NaNinf",
+        "description": "Reach 2147483647 Total",
+        "reward": 1337,
+    },
     "volt_prize_receiver": {
         "name": "Volt Prize Receiver",
         "description": "Have a \"Volt's Prize\" (admin_itemitemitem) in your inventory.",

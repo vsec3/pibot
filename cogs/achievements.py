@@ -103,6 +103,10 @@ class Achievements(commands.Cog):
         if total >= 10000000:
             if await self.achievements_manager.unlock_achievement(guild_id, user_id, "savehacking"):
                 await self._award_achievement(guild_id, user_id, "savehacking")
+
+        if total >= 2147483647:
+            if await self.achievements_manager.unlock_achievement(guild_id, user_id, "naninf"):
+                await self._award_achievement(guild_id, user_id, "naninf")
     
     async def check_inventory_achievements(self, guild_id: int, user_id: int) -> None:
         """Check inventory-based achievements"""
