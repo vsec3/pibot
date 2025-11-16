@@ -103,8 +103,8 @@ class Economy(commands.Cog):
     @app_commands.command(name="balance", description="Check wallet and bank balances")
     async def balance(self, interaction: discord.Interaction, user: Optional[discord.User] = None) -> None:
         target = user or interaction.user
-        await self.manager.ensure_user(target.id)
-        wallet, bank = await self.manager.get_balances(target.id)
+        await self.manager.ensure_user(str(interaction.guild.id), target.id)
+        wallet, bank = await self.manager.get_balances(str(interaction.guild.id), target.id)
         embed = embedbuildthing("Balance")
         if hasattr(target, "display_avatar"):
             embed.set_author(name=str(target), icon_url=target.display_avatar.url)
