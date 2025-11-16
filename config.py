@@ -36,23 +36,23 @@ SHOP_ITEMS = ["lockpick", "gun", "advanced_lockpick", "hacker_tool", "mask", "li
 JOB_DATA = {
     "factory_worker": {
         "name": "Factory Worker",
-        "payout_per_minute": 50,
+        "payout_per_minute": 5,
         "decline_chance": 0.05,
     },
     "office_worker": {
         "name": "Office Worker",
-        "payout_per_minute": 100,
+        "payout_per_minute": 10,
         "decline_chance": 0.35,
     },
     "scientist": {
         "name": "Scientist",
-        "payout_per_minute": 250,
-        "decline_chance": 0.60,
+        "payout_per_minute": 25,
+        "decline_chance": 0.45,
     },
     "doctor": {
         "name": "Doctor",
-        "payout_per_minute": 500,
-        "decline_chance": 0.90,
+        "payout_per_minute": 50,
+        "decline_chance": 0.60,
     },
 }
 
