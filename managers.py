@@ -14,64 +14,59 @@ class EconomyManager:
     def __init__(self, file_path: Path):
         self.file_path = file_path
         self.lock = asyncio.Lock()
-        self.data: Dict[str, Dict[str, Dict[str, object]]] = {}  # guild_id -> user_id -> data
+        self.users: Dict[str, Dict[str, object]] = {}
     
-    def _ensure_user(self, guild_id: str, user_id: int) -> Dict[str, object]:
-        key_guild = str(guild_id)
-        key_user = str(user_id)
-        if key_guild not in self.data:
-            self.data[key_guild] = {}
-        if key_user not in self.data[key_guild]:
-            self.data[key_guild][key_user] = {"wallet": 0, "bank": 0, "inventory": {}}
-        return self.data[key_guild][key_user]
+    def _ensure_user(self, user_id: int) -> Dict[str, object]:
+        key = str(user_id)
+        if key not in self.users:
+            self.users[key] = {"wallet": 0, "bank": 0, "inventory": {}}
+        return self.users[key]
     
     async def load(self) -> None:
         async with self.lock:
             if not self.file_path.exists():
-                self.data = {}
+                self.users = {}
                 return
             try:
                 with open(self.file_path, "r") as f:
                     data = json.load(f)
-                self.data = {}
-                for guild_id, guild_data in data.get("guilds", {}).items():
-                    raw_users = guild_data.get("users", {})
-                    self.data[guild_id] = {}
-                    for user_id, payload in raw_users.items():
-                        wallet = max(0, int(payload.get("wallet", 0)))
-                        bank = max(0, int(payload.get("bank", 0)))
-                        inventory_data = {}
-                        raw_inventory = payload.get("inventory", {})
-                        for item_key, amount in raw_inventory.items():
-                            if item_key in ITEM_DATA:
-                                inventory_data[item_key] = max(0, int(amount))
-                        self.data[guild_id][user_id] = {"wallet": wallet, "bank": bank, "inventory": inventory_data}
+                raw_users = data.get("users", {})
+                self.users = {}
+                for user_id, payload in raw_users.items():
+                    wallet = max(0, int(payload.get("wallet", 0)))
+                    bank = max(0, int(payload.get("bank", 0)))
+                    inventory_data = {}
+                    raw_inventory = payload.get("inventory", {})
+                    for item_key, amount in raw_inventory.items():
+                        if item_key in ITEM_DATA:
+                            inventory_data[item_key] = max(0, int(amount))
+                    self.users[user_id] = {"wallet": wallet, "bank": bank, "inventory": inventory_data}
             except Exception:
-                self.data = {}
+                self.users = {}
     
     async def save(self) -> None:
         async with self.lock:
-            data = {"guilds": self.data}
+            data = {"users": self.users}
             with open(self.file_path, "w") as f:
                 json.dump(data, f, indent=2)
     
-    async def ensure_user(self, guild_id: str, user_id: int) -> None:
+    async def ensure_user(self, user_id: int) -> None:
         async with self.lock:
-            self._ensure_user(guild_id, user_id)
+            self._ensure_user(user_id)
     
-    async def get_balances(self, guild_id: str, user_id: int) -> Tuple[int, int]:
+    async def get_balances(self, user_id: int) -> Tuple[int, int]:
         async with self.lock:
-            user = self._ensure_user(guild_id, user_id)
+            user = self._ensure_user(user_id)
             return user["wallet"], user["bank"]
     
-    async def total_balance(self, guild_id: str, user_id: int) -> int:
+    async def total_balance(self, user_id: int) -> int:
         async with self.lock:
-            user = self._ensure_user(guild_id, user_id)
+            user = self._ensure_user(user_id)
             return user["wallet"] + user["bank"]
     
-    async def deposit(self, guild_id: str, user_id: int, amount: Optional[int]) -> int:
+    async def deposit(self, user_id: int, amount: Optional[int]) -> int:
         async with self.lock:
-            user = self._ensure_user(guild_id, user_id)
+            user = self._ensure_user(user_id)
             if user["wallet"] <= 0:
                 return 0
             if amount is None or amount > user["wallet"]:
@@ -84,9 +79,9 @@ class EconomyManager:
             user["bank"] += deposit_amount
             return deposit_amount
     
-    async def withdraw(self, guild_id: str, user_id: int, amount: Optional[int]) -> int:
+    async def withdraw(self, user_id: int, amount: Optional[int]) -> int:
         async with self.lock:
-            user = self._ensure_user(guild_id, user_id)
+            user = self._ensure_user(user_id)
             if user["bank"] <= 0:
                 return 0
             if amount is None or amount > user["bank"]:
@@ -99,47 +94,47 @@ class EconomyManager:
             user["wallet"] += withdraw_amount
             return withdraw_amount
     
-    async def add_wallet(self, guild_id: str, user_id: int, amount: int) -> int:
+    async def add_wallet(self, user_id: int, amount: int) -> int:
         async with self.lock:
-            user = self._ensure_user(guild_id, user_id)
+            user = self._ensure_user(user_id)
             user["wallet"] += max(0, amount)
             return user["wallet"]
     
-    async def add_bank(self, guild_id: str, user_id: int, amount: int) -> int:
+    async def add_bank(self, user_id: int, amount: int) -> int:
         async with self.lock:
-            user = self._ensure_user(guild_id, user_id)
+            user = self._ensure_user(user_id)
             user["bank"] += max(0, amount)
             return user["bank"]
     
-    async def deduct_wallet(self, guild_id: str, user_id: int, amount: int) -> bool:
+    async def deduct_wallet(self, user_id: int, amount: int) -> bool:
         async with self.lock:
-            user = self._ensure_user(guild_id, user_id)
+            user = self._ensure_user(user_id)
             if amount <= 0 or user["wallet"] < amount:
                 return False
             user["wallet"] -= amount
             return True
     
-    async def has_wallet(self, guild_id: str, user_id: int, amount: int) -> bool:
+    async def has_wallet(self, user_id: int, amount: int) -> bool:
         async with self.lock:
-            user = self._ensure_user(guild_id, user_id)
+            user = self._ensure_user(user_id)
             return user["wallet"] >= amount
     
-    async def get_inventory(self, guild_id: str, user_id: int) -> Dict[str, int]:
+    async def get_inventory(self, user_id: int) -> Dict[str, int]:
         async with self.lock:
-            user = self._ensure_user(guild_id, user_id)
+            user = self._ensure_user(user_id)
             return dict(user["inventory"])
     
-    async def add_item(self, guild_id: str, user_id: int, item_key: str, amount: int = 1) -> None:
+    async def add_item(self, user_id: int, item_key: str, amount: int = 1) -> None:
         async with self.lock:
             if item_key not in ITEM_DATA:
                 return
-            user = self._ensure_user(guild_id, user_id)
+            user = self._ensure_user(user_id)
             inventory = user["inventory"]
             inventory[item_key] = inventory.get(item_key, 0) + max(0, amount)
     
-    async def sell_items(self, guild_id: str, user_id: int, item_key: Optional[str], quantity: Optional[int]) -> Tuple[List[Tuple[str, int, int]], int]:
+    async def sell_items(self, user_id: int, item_key: Optional[str], quantity: Optional[int]) -> Tuple[List[Tuple[str, int, int]], int]:
         async with self.lock:
-            user = self._ensure_user(guild_id, user_id)
+            user = self._ensure_user(user_id)
             inventory = user["inventory"]
             if not inventory:
                 return [], 0
@@ -189,32 +184,23 @@ class EconomyManager:
             standings.sort(key=lambda item: item[3], reverse=True)
             return standings[:limit]
     
-    async def has_item(self, guild_id: str, user_id: int, item_key: str) -> bool:
+    async def has_item(self, user_id: int, item_key: str) -> bool:
         async with self.lock:
-            user = self._ensure_user(guild_id, user_id)
+            user = self._ensure_user(user_id)
             return user["inventory"].get(item_key, 0) > 0
     
-    async def has_items(self, guild_id: str, user_id: int, item_keys: List[str]) -> bool:
+    async def has_items(self, user_id: int, item_keys: List[str]) -> bool:
         async with self.lock:
-            user = self._ensure_user(guild_id, user_id)
+            user = self._ensure_user(user_id)
             inventory = user["inventory"]
             return all(inventory.get(key, 0) > 0 for key in item_keys)
     
-    async def seize_all_items(self, guild_id: str, user_id: int) -> Dict[str, int]:
+    async def seize_all_items(self, user_id: int) -> Dict[str, int]:
         async with self.lock:
-            user = self._ensure_user(guild_id, user_id)
+            user = self._ensure_user(user_id)
             seized = dict(user["inventory"])
             user["inventory"] = {}
             return seized
-    
-    async def get_total_balance(self, user_id: int) -> int:
-        async with self.lock:
-            total = 0
-            for guild_data in self.data.values():
-                user_data = guild_data.get(str(user_id))
-                if user_data:
-                    total += user_data["wallet"] + user_data["bank"]
-            return total
 
 
 class JobsManager:
@@ -500,8 +486,9 @@ class GuildsManager:
             
             standings = []
             for user_id in guild["members"]:
-                total = await economy_manager.get_total_balance(user_id)
-                standings.append((user_id, 0, total, total))
+                wallet, bank = await economy_manager.get_balances(user_id)
+                total = wallet + bank
+                standings.append((user_id, wallet, bank, total))
             
             standings.sort(key=lambda x: x[3], reverse=True)
             return standings
@@ -513,7 +500,8 @@ class GuildsManager:
             for guild_id, guild_data in self.guilds.items():
                 total_wealth = 0
                 for user_id in guild_data["members"]:
-                    total_wealth += await economy_manager.get_total_balance(user_id)
+                    wallet, bank = await economy_manager.get_balances(user_id)
+                    total_wealth += wallet + bank
                 guild_totals.append((guild_id, total_wealth))
             
             guild_totals.sort(key=lambda x: x[1], reverse=True)

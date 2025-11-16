@@ -38,7 +38,6 @@ async def on_ready():
         print("Logged in")
         synced = await bot.tree.sync()
         print(f"Locked in and synced {len(synced)} command{'s' if len(synced) != 1 else ''}")
-        await bot.change_presence(activity=discord.Game(name=f"/help | {len(bot.guilds)} servers"))
     except Exception as e:
         print(f"Error syncing commands: {e}")
 
