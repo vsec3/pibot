@@ -1,1 +1,19 @@
-{}
+{
+  "guilds": {
+    "1438341576408563796": {
+      "user_achievements": {
+        "1196853485329719328": [
+          "money_launderer",
+          "money_lover",
+          "gifted_by_god",
+          "money_fiend",
+          "minimum_wage_slave"
+        ],
+        "1007981923223736381": [
+          "money_lover",
+          "money_fiend"
+        ]
+      }
+    }
+  }
+}

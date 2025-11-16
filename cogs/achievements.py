@@ -73,43 +73,45 @@ class Achievements(commands.Cog):
     @app_commands.guild_only()
     @app_commands.command(name="viewachievements", description="View your achievements")
     async def viewachievements(self, interaction: discord.Interaction) -> None:
-        unlocked = await self.achievements_manager.get_user_achievements(interaction.user.id)
+        if not interaction.guild_id:
+            return
+        unlocked = await self.achievements_manager.get_user_achievements(interaction.guild_id, interaction.user.id)
         view = AchievementsView(unlocked, self.bot, interaction.user.id)
         embed = view.build_embed()
         await interaction.response.send_message(embed=embed, view=view)
     
-    async def check_balance_achievements(self, user_id: int) -> None:
+    async def check_balance_achievements(self, guild_id: int, user_id: int) -> None:
         """Check balance-based achievements"""
-        total = await self.economy_manager.total_balance(user_id)
+        total = await self.economy_manager.total_balance(guild_id, user_id)
         
         if total >= 5000:
-            if await self.achievements_manager.unlock_achievement(user_id, "money_lover"):
-                await self._award_achievement(user_id, "money_lover")
+            if await self.achievements_manager.unlock_achievement(guild_id, user_id, "money_lover"):
+                await self._award_achievement(guild_id, user_id, "money_lover")
         
         if total >= 10000:
-            if await self.achievements_manager.unlock_achievement(user_id, "money_fiend"):
-                await self._award_achievement(user_id, "money_fiend")
+            if await self.achievements_manager.unlock_achievement(guild_id, user_id, "money_fiend"):
+                await self._award_achievement(guild_id, user_id, "money_fiend")
         
         if total >= 100000:
-            if await self.achievements_manager.unlock_achievement(user_id, "money_launderer"):
-                await self._award_achievement(user_id, "money_launderer")
+            if await self.achievements_manager.unlock_achievement(guild_id, user_id, "money_launderer"):
+                await self._award_achievement(guild_id, user_id, "money_launderer")
         
         if total >= 1000000:
-            if await self.achievements_manager.unlock_achievement(user_id, "gifted_by_god"):
-                await self._award_achievement(user_id, "gifted_by_god")
+            if await self.achievements_manager.unlock_achievement(guild_id, user_id, "gifted_by_god"):
+                await self._award_achievement(guild_id, user_id, "gifted_by_god")
         
         if total >= 10000000:
-            if await self.achievements_manager.unlock_achievement(user_id, "savehacking"):
-                await self._award_achievement(user_id, "savehacking")
+            if await self.achievements_manager.unlock_achievement(guild_id, user_id, "savehacking"):
+                await self._award_achievement(guild_id, user_id, "savehacking")
     
-    async def check_inventory_achievements(self, user_id: int) -> None:
+    async def check_inventory_achievements(self, guild_id: int, user_id: int) -> None:
         """Check inventory-based achievements"""
-        inventory = await self.economy_manager.get_inventory(user_id)
+        inventory = await self.economy_manager.get_inventory(guild_id, user_id)
         if inventory.get("admin_itemitemitem", 0) > 0:
-            if await self.achievements_manager.unlock_achievement(user_id, "volt_prize_receiver"):
-                await self._award_achievement(user_id, "volt_prize_receiver")
+            if await self.achievements_manager.unlock_achievement(guild_id, user_id, "volt_prize_receiver"):
+                await self._award_achievement(guild_id, user_id, "volt_prize_receiver")
     
-    async def check_guild_achievements(self, user_id: int) -> None:
+    async def check_guild_achievements(self, guild_id: int, user_id: int) -> None:
         """Check guild-based achievements"""
         from managers import GuildsManager
         guilds_cog = self.bot.get_cog("Guilds")
@@ -117,28 +119,28 @@ class Achievements(commands.Cog):
             return
         
         guilds_manager = guilds_cog.guilds_manager
-        guild_id = await guilds_manager.get_user_guild(user_id)
+        player_guild_id = await guilds_manager.get_user_guild(guild_id, user_id)
         
-        if guild_id:
-            if await self.achievements_manager.unlock_achievement(user_id, "guildeer"):
-                await self._award_achievement(user_id, "guildeer")
+        if player_guild_id:
+            if await self.achievements_manager.unlock_achievement(guild_id, user_id, "guildeer"):
+                await self._award_achievement(guild_id, user_id, "guildeer")
             
             # Check leaderboard achievement
-            guild_standings = await guilds_manager.get_guild_leaderboard_all(self.economy_manager)
+            guild_standings = await guilds_manager.get_guild_leaderboard_all(guild_id, self.economy_manager)
             for index, (gid, _) in enumerate(guild_standings[:5], start=1):
-                if gid == guild_id:
-                    if await self.achievements_manager.unlock_achievement(user_id, "leaderboard"):
-                        await self._award_achievement(user_id, "leaderboard")
+                if gid == player_guild_id:
+                    if await self.achievements_manager.unlock_achievement(guild_id, user_id, "leaderboard"):
+                        await self._award_achievement(guild_id, user_id, "leaderboard")
                     break
     
-    async def _award_achievement(self, user_id: int, achievement_key: str) -> None:
+    async def _award_achievement(self, guild_id: int, user_id: int, achievement_key: str) -> None:
         """Award an achievement and give the reward"""
         achievement = ACHIEVEMENTS.get(achievement_key)
         if not achievement:
             return
         
         reward = achievement["reward"]
-        await self.economy_manager.add_wallet(user_id, reward)
+        await self.economy_manager.add_wallet(guild_id, user_id, reward)
         await self.economy_manager.save()
         await self.achievements_manager.save()
         

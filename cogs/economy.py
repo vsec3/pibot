@@ -21,9 +21,10 @@ def describe_items(items: List[Tuple[str, int, int]]) -> List[str]:
 
 
 class CoinflipView(discord.ui.View):
-    def __init__(self, manager: EconomyManager, challenger_id: int, target_id: int, amount: int, bot: commands.Bot):
+    def __init__(self, manager: EconomyManager, guild_id: int, challenger_id: int, target_id: int, amount: int, bot: commands.Bot):
         super().__init__(timeout=60)
         self.manager = manager
+        self.guild_id = guild_id
         self.challenger_id = challenger_id
         self.target_id = target_id
         self.amount = amount
@@ -39,8 +40,8 @@ class CoinflipView(discord.ui.View):
         if interaction.user.id != self.target_id:
             await interaction.response.defer()
             return
-        challenger_has = await self.manager.has_wallet(self.challenger_id, self.amount)
-        target_has = await self.manager.has_wallet(self.target_id, self.amount)
+        challenger_has = await self.manager.has_wallet(self.guild_id, self.challenger_id, self.amount)
+        target_has = await self.manager.has_wallet(self.guild_id, self.target_id, self.amount)
         if not challenger_has or not target_has:
             self._disable_controls()
             missing = self.challenger_id if not challenger_has else self.target_id
@@ -48,21 +49,21 @@ class CoinflipView(discord.ui.View):
             await interaction.response.edit_message(content=content, view=self)
             await self.manager.save()
             return
-        if not await self.manager.deduct_wallet(self.challenger_id, self.amount):
+        if not await self.manager.deduct_wallet(self.guild_id, self.challenger_id, self.amount):
             self._disable_controls()
             content = f"<@{self.challenger_id}> no longer has enough funds for the coinflip."
             await interaction.response.edit_message(content=content, view=self)
             await self.manager.save()
             return
-        if not await self.manager.deduct_wallet(self.target_id, self.amount):
-            await self.manager.add_wallet(self.challenger_id, self.amount)
+        if not await self.manager.deduct_wallet(self.guild_id, self.target_id, self.amount):
+            await self.manager.add_wallet(self.guild_id, self.challenger_id, self.amount)
             self._disable_controls()
             content = f"<@{self.target_id}> no longer has enough funds for the coinflip."
             await interaction.response.edit_message(content=content, view=self)
             await self.manager.save()
             return
         winner_id = random.choice([self.challenger_id, self.target_id])
-        await self.manager.add_wallet(winner_id, self.amount * 2)
+        await self.manager.add_wallet(self.guild_id, winner_id, self.amount * 2)
         self._disable_controls()
         content = (
             f"<@{self.target_id}> accepted the coinflip from <@{self.challenger_id}>. "
@@ -74,7 +75,7 @@ class CoinflipView(discord.ui.View):
         # Check balance achievements for winner
         achievements_cog = self.bot.get_cog("Achievements")
         if achievements_cog:
-            await achievements_cog.check_balance_achievements(winner_id)
+            await achievements_cog.check_balance_achievements(self.guild_id, winner_id)
     
     @discord.ui.button(label="Decline", style=discord.ButtonStyle.secondary)
     async def decline(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
@@ -102,9 +103,11 @@ class Economy(commands.Cog):
     @app_commands.guild_only()
     @app_commands.command(name="balance", description="Check wallet and bank balances")
     async def balance(self, interaction: discord.Interaction, user: Optional[discord.User] = None) -> None:
+        if not interaction.guild_id:
+            return
         target = user or interaction.user
-        await self.manager.ensure_user(target.id)
-        wallet, bank = await self.manager.get_balances(target.id)
+        await self.manager.ensure_user(interaction.guild_id, target.id)
+        wallet, bank = await self.manager.get_balances(interaction.guild_id, target.id)
         embed = embedbuildthing("Balance")
         if hasattr(target, "display_avatar"):
             embed.set_author(name=str(target), icon_url=target.display_avatar.url)
@@ -118,17 +121,19 @@ class Economy(commands.Cog):
         # Check balance achievements
         achievements_cog = self.bot.get_cog("Achievements")
         if achievements_cog:
-            await achievements_cog.check_balance_achievements(target.id)
+            await achievements_cog.check_balance_achievements(interaction.guild_id, target.id)
     
     @app_commands.guild_only()
     @app_commands.command(name="deposit", description="Deposit money into your bank")
     async def deposit(self, interaction: discord.Interaction, amount: Optional[int] = None) -> None:
+        if not interaction.guild_id:
+            return
         if amount is not None and amount <= 0:
             embed = embedbuildthing("Invalid Amount", "Enter a positive amount to deposit.", color=discord.Color.red())
             await interaction.response.send_message(embed=embed)
             await self.manager.save()
             return
-        deposited = await self.manager.deposit(interaction.user.id, amount)
+        deposited = await self.manager.deposit(interaction.guild_id, interaction.user.id, amount)
         if deposited <= 0:
             embed = embedbuildthing("Deposit Failed", "No funds available in your wallet.", color=discord.Color.red())
             await interaction.response.send_message(embed=embed)
@@ -141,17 +146,19 @@ class Economy(commands.Cog):
         # Check balance achievements
         achievements_cog = self.bot.get_cog("Achievements")
         if achievements_cog:
-            await achievements_cog.check_balance_achievements(interaction.user.id)
+            await achievements_cog.check_balance_achievements(interaction.guild_id, interaction.user.id)
     
     @app_commands.guild_only()
     @app_commands.command(name="withdraw", description="Withdraw money from your bank")
     async def withdraw(self, interaction: discord.Interaction, amount: Optional[int] = None) -> None:
+        if not interaction.guild_id:
+            return
         if amount is not None and amount <= 0:
             embed = embedbuildthing("Invalid Amount", "Enter a positive amount to withdraw.", color=discord.Color.red())
             await interaction.response.send_message(embed=embed)
             await self.manager.save()
             return
-        withdrawn = await self.manager.withdraw(interaction.user.id, amount)
+        withdrawn = await self.manager.withdraw(interaction.guild_id, interaction.user.id, amount)
         if withdrawn <= 0:
             embed = embedbuildthing("Withdraw Failed", "No funds available in your bank.", color=discord.Color.red())
             await interaction.response.send_message(embed=embed)
@@ -164,11 +171,13 @@ class Economy(commands.Cog):
         # Check balance achievements
         achievements_cog = self.bot.get_cog("Achievements")
         if achievements_cog:
-            await achievements_cog.check_balance_achievements(interaction.user.id)
+            await achievements_cog.check_balance_achievements(interaction.guild_id, interaction.user.id)
     
     @app_commands.guild_only()
     @app_commands.command(name="leaderboard", description="Show the top guilds by total wealth")
     async def leaderboard(self, interaction: discord.Interaction) -> None:
+        if not interaction.guild_id:
+            return
         from managers import GuildsManager
         # Get guilds manager from bot
         guilds_cog = self.bot.get_cog("Guilds")
@@ -178,7 +187,7 @@ class Economy(commands.Cog):
             return
         
         guilds_manager = guilds_cog.guilds_manager
-        guild_standings = await guilds_manager.get_guild_leaderboard_all(self.manager)
+        guild_standings = await guilds_manager.get_guild_leaderboard_all(interaction.guild_id, self.manager)
         
         if not guild_standings:
             embed = embedbuildthing("Leaderboard", "No guilds found.")
@@ -189,7 +198,7 @@ class Economy(commands.Cog):
         lines = []
         top_guild = None
         for index, (guild_id, total_wealth) in enumerate(guild_standings[:10], start=1):
-            guild = await guilds_manager.get_guild(guild_id)
+            guild = await guilds_manager.get_guild(interaction.guild_id, guild_id)
             if guild:
                 display_name = guild["display_name"]
                 member_count = len(guild["members"])
@@ -207,16 +216,18 @@ class Economy(commands.Cog):
         achievements_cog = self.bot.get_cog("Achievements")
         if achievements_cog:
             for guild_id, _ in guild_standings[:5]:
-                guild = await guilds_manager.get_guild(guild_id)
+                guild = await guilds_manager.get_guild(interaction.guild_id, guild_id)
                 if guild:
                     for member_id in guild["members"]:
-                        await achievements_cog.check_guild_achievements(member_id)
+                        await achievements_cog.check_guild_achievements(interaction.guild_id, member_id)
     
     @app_commands.guild_only()
     @app_commands.command(name="inventory", description="Show your inventory")
     async def inventory(self, interaction: discord.Interaction) -> None:
-        await self.manager.ensure_user(interaction.user.id)
-        inventory = await self.manager.get_inventory(interaction.user.id)
+        if not interaction.guild_id:
+            return
+        await self.manager.ensure_user(interaction.guild_id, interaction.user.id)
+        inventory = await self.manager.get_inventory(interaction.guild_id, interaction.user.id)
         if not inventory:
             embed = embedbuildthing("Inventory", "You have no items.")
             await interaction.response.send_message(embed=embed)
@@ -233,12 +244,14 @@ class Economy(commands.Cog):
         # Check inventory achievements
         achievements_cog = self.bot.get_cog("Achievements")
         if achievements_cog:
-            await achievements_cog.check_inventory_achievements(interaction.user.id)
+            await achievements_cog.check_inventory_achievements(interaction.guild_id, interaction.user.id)
     
     @app_commands.guild_only()
     @app_commands.command(name="sell", description="Sell items from your inventory")
     @app_commands.describe(item="Item to sell", amount="Quantity to sell")
     async def sell(self, interaction: discord.Interaction, item: Optional[str] = None, amount: Optional[int] = None) -> None:
+        if not interaction.guild_id:
+            return
         if amount is not None and amount <= 0:
             embed = embedbuildthing("Invalid Amount", "Enter a positive amount to sell.", color=discord.Color.red())
             await interaction.response.send_message(embed=embed)
@@ -253,7 +266,7 @@ class Economy(commands.Cog):
                 await self.manager.save()
                 return
             item_key = resolved
-        details, total_value = await self.manager.sell_items(interaction.user.id, item_key, amount)
+        details, total_value = await self.manager.sell_items(interaction.guild_id, interaction.user.id, item_key, amount)
         if not details:
             embed = embedbuildthing("Nothing Sold", "You have no items to sell.", color=discord.Color.red())
             await interaction.response.send_message(embed=embed)
@@ -268,38 +281,40 @@ class Economy(commands.Cog):
         # Check balance achievements after selling
         achievements_cog = self.bot.get_cog("Achievements")
         if achievements_cog:
-            await achievements_cog.check_balance_achievements(interaction.user.id)
+            await achievements_cog.check_balance_achievements(interaction.guild_id, interaction.user.id)
     
     @app_commands.guild_only()
     @app_commands.command(name="beg", description="Beg for money")
     async def beg(self, interaction: discord.Interaction) -> None:
+        if not interaction.guild_id:
+            return
         roll = random.random()
         if roll < 0.33:
             description = "You received nothing."
         elif roll < 0.66:
             amount = random.randint(3, 5)
-            await self.manager.add_wallet(interaction.user.id, amount)
+            await self.manager.add_wallet(interaction.guild_id, interaction.user.id, amount)
             description = f"You received {currency(amount)}."
         elif roll < 0.81:
             amount = random.randint(9, 16)
-            await self.manager.add_wallet(interaction.user.id, amount)
+            await self.manager.add_wallet(interaction.guild_id, interaction.user.id, amount)
             description = f"You received {currency(amount)}."
         elif roll < 0.86:
-            await self.manager.add_item(interaction.user.id, "golden_potato")
+            await self.manager.add_item(interaction.guild_id, interaction.user.id, "golden_potato")
             description = "You found a Golden Potato."
             
             # Check inventory achievements
             achievements_cog = self.bot.get_cog("Achievements")
             if achievements_cog:
-                await achievements_cog.check_inventory_achievements(interaction.user.id)
+                await achievements_cog.check_inventory_achievements(interaction.guild_id, interaction.user.id)
         elif roll < 0.87:
-            await self.manager.add_bank(interaction.user.id, 120)
+            await self.manager.add_bank(interaction.guild_id, interaction.user.id, 120)
             description = "You found a wallet with $120 and placed it in your bank."
             
             # Check balance achievements
             achievements_cog = self.bot.get_cog("Achievements")
             if achievements_cog:
-                await achievements_cog.check_balance_achievements(interaction.user.id)
+                await achievements_cog.check_balance_achievements(interaction.guild_id, interaction.user.id)
         else:
             description = "You received nothing."
         embed = embedbuildthing("Begging Results", description)
@@ -309,11 +324,13 @@ class Economy(commands.Cog):
         # Check balance achievements
         achievements_cog = self.bot.get_cog("Achievements")
         if achievements_cog:
-            await achievements_cog.check_balance_achievements(interaction.user.id)
+            await achievements_cog.check_balance_achievements(interaction.guild_id, interaction.user.id)
     
     @app_commands.guild_only()
     @app_commands.command(name="fish", description="Go fishing")
     async def fish(self, interaction: discord.Interaction) -> None:
+        if not interaction.guild_id:
+            return
         roll = random.random()
         catch = None
         if roll < 0.20:
@@ -329,14 +346,14 @@ class Economy(commands.Cog):
         elif roll < 0.701:
             catch = "angel_o8"
         if catch:
-            await self.manager.add_item(interaction.user.id, catch)
+            await self.manager.add_item(interaction.guild_id, interaction.user.id, catch)
             item_name = ITEM_DATA[catch]["name"]
             embed = embedbuildthing("Fishing Results", f"You caught a {item_name}.")
             
             # Check inventory achievements
             achievements_cog = self.bot.get_cog("Achievements")
             if achievements_cog:
-                await achievements_cog.check_inventory_achievements(interaction.user.id)
+                await achievements_cog.check_inventory_achievements(interaction.guild_id, interaction.user.id)
         else:
             embed = embedbuildthing("Fishing Results", "You caught nothing.")
         await interaction.response.send_message(embed=embed)
@@ -345,17 +362,19 @@ class Economy(commands.Cog):
     @app_commands.guild_only()
     @app_commands.command(name="gamble", description="Gamble your money")
     async def gamble(self, interaction: discord.Interaction, amount: int) -> None:
+        if not interaction.guild_id:
+            return
         if amount <= 0:
             embed = embedbuildthing("Invalid Amount", "Enter a positive amount to gamble.", color=discord.Color.red())
             await interaction.response.send_message(embed=embed)
             await self.manager.save()
             return
-        if not await self.manager.has_wallet(interaction.user.id, amount):
+        if not await self.manager.has_wallet(interaction.guild_id, interaction.user.id, amount):
             embed = embedbuildthing("Insufficient Funds", "You do not have enough money in your wallet.", color=discord.Color.red())
             await interaction.response.send_message(embed=embed)
             await self.manager.save()
             return
-        if not await self.manager.deduct_wallet(interaction.user.id, amount):
+        if not await self.manager.deduct_wallet(interaction.guild_id, interaction.user.id, amount):
             embed = embedbuildthing("Insufficient Funds", "You do not have enough money in your wallet.", color=discord.Color.red())
             await interaction.response.send_message(embed=embed)
             await self.manager.save()
@@ -364,13 +383,13 @@ class Economy(commands.Cog):
         if roll < 0.70:
             returned = amount // 2
             if returned > 0:
-                await self.manager.add_wallet(interaction.user.id, returned)
+                await self.manager.add_wallet(interaction.guild_id, interaction.user.id, returned)
             result = f"You halved your bet and received {currency(returned)}."
         elif roll < 0.80:
             result = "You lost everything you gambled."
         else:
             winnings = amount * 2
-            await self.manager.add_wallet(interaction.user.id, winnings)
+            await self.manager.add_wallet(interaction.guild_id, interaction.user.id, winnings)
             result = f"You doubled your bet and won {currency(winnings)}."
         embed = embedbuildthing("Gamble Results", result)
         await interaction.response.send_message(embed=embed)
@@ -379,12 +398,14 @@ class Economy(commands.Cog):
         # Check balance achievements
         achievements_cog = self.bot.get_cog("Achievements")
         if achievements_cog:
-            await achievements_cog.check_balance_achievements(interaction.user.id)
+            await achievements_cog.check_balance_achievements(interaction.guild_id, interaction.user.id)
     
     @app_commands.guild_only()
     @app_commands.command(name="donate", description="Donate money to another user")
     @app_commands.describe(user="Recipient", amount="Amount to donate")
     async def donate(self, interaction: discord.Interaction, user: discord.Member, amount: int) -> None:
+        if not interaction.guild_id:
+            return
         if user.id == interaction.user.id:
             embed = embedbuildthing("Invalid Recipient", "You cannot donate to yourself.", color=discord.Color.red())
             await interaction.response.send_message(embed=embed)
@@ -395,17 +416,17 @@ class Economy(commands.Cog):
             await interaction.response.send_message(embed=embed)
             await self.manager.save()
             return
-        if not await self.manager.has_wallet(interaction.user.id, amount):
+        if not await self.manager.has_wallet(interaction.guild_id, interaction.user.id, amount):
             embed = embedbuildthing("Insufficient Funds", "You do not have enough money in your wallet.", color=discord.Color.red())
             await interaction.response.send_message(embed=embed)
             await self.manager.save()
             return
-        if not await self.manager.deduct_wallet(interaction.user.id, amount):
+        if not await self.manager.deduct_wallet(interaction.guild_id, interaction.user.id, amount):
             embed = embedbuildthing("Insufficient Funds", "You do not have enough money in your wallet.", color=discord.Color.red())
             await interaction.response.send_message(embed=embed)
             await self.manager.save()
             return
-        await self.manager.add_wallet(user.id, amount)
+        await self.manager.add_wallet(interaction.guild_id, user.id, amount)
         embed = embedbuildthing("Donation Successful", f"Donated {currency(amount)} to {user.mention}.", color=discord.Color.green())
         await interaction.response.send_message(embed=embed)
         await self.manager.save()
@@ -413,12 +434,14 @@ class Economy(commands.Cog):
         # Check balance achievements for recipient
         achievements_cog = self.bot.get_cog("Achievements")
         if achievements_cog:
-            await achievements_cog.check_balance_achievements(user.id)
+            await achievements_cog.check_balance_achievements(interaction.guild_id, user.id)
     
     @app_commands.guild_only()
     @app_commands.command(name="givemoney", description="Give money to a user (admin only)")
     @app_commands.describe(user="User to receive money", amount="Amount to give")
     async def givemoney(self, interaction: discord.Interaction, user: discord.Member, amount: int) -> None:
+        if not interaction.guild_id:
+            return
         from utils import is_admin
         if not is_admin(interaction.user):
             embed = embedbuildthing("Permission Denied", "You must have too many permissions to use this command.", color=discord.Color.red())
@@ -430,7 +453,7 @@ class Economy(commands.Cog):
             await interaction.response.send_message(embed=embed)
             await self.manager.save()
             return
-        await self.manager.add_wallet(user.id, amount)
+        await self.manager.add_wallet(interaction.guild_id, user.id, amount)
         embed = embedbuildthing("Funds Granted", f"Gave {currency(amount)} to {user.mention}.", color=discord.Color.green())
         await interaction.response.send_message(embed=embed)
         await self.manager.save()
@@ -438,20 +461,22 @@ class Economy(commands.Cog):
         # Check balance achievements for recipient
         achievements_cog = self.bot.get_cog("Achievements")
         if achievements_cog:
-            await achievements_cog.check_balance_achievements(user.id)
+            await achievements_cog.check_balance_achievements(interaction.guild_id, user.id)
     
     @app_commands.guild_only()
     @app_commands.command(name="giveitem", description="Give an item to a user (admin only)")
     @app_commands.describe(user="User to receive the item")
     @app_commands.choices(item=[app_commands.Choice(name=data["name"], value=key) for key, data in ITEM_DATA.items()])
     async def giveitem(self, interaction: discord.Interaction, user: discord.Member, item: app_commands.Choice[str]) -> None:
+        if not interaction.guild_id:
+            return
         from utils import is_admin
         if not is_admin(interaction.user):
             embed = embedbuildthing("Permission Denied", "You must have a whole lotta permissions to use this command.", color=discord.Color.red())
             await interaction.response.send_message(embed=embed)
             await self.manager.save()
             return
-        await self.manager.add_item(user.id, item.value)
+        await self.manager.add_item(interaction.guild_id, user.id, item.value)
         item_name = ITEM_DATA[item.value]["name"]
         embed = embedbuildthing("Item Granted", f"Gave {item_name} to {user.mention}.", color=discord.Color.green())
         await interaction.response.send_message(embed=embed)
@@ -460,7 +485,7 @@ class Economy(commands.Cog):
         # Check inventory achievements for recipient
         achievements_cog = self.bot.get_cog("Achievements")
         if achievements_cog:
-            await achievements_cog.check_inventory_achievements(user.id)
+            await achievements_cog.check_inventory_achievements(interaction.guild_id, user.id)
     
     @app_commands.guild_only()
     @app_commands.command(name="coinflip", description="Coinflip another user")
@@ -476,18 +501,20 @@ class Economy(commands.Cog):
             await interaction.response.send_message(embed=embed)
             await self.manager.save()
             return
-        if not await self.manager.has_wallet(interaction.user.id, amount):
+        if not interaction.guild_id:
+            return
+        if not await self.manager.has_wallet(interaction.guild_id, interaction.user.id, amount):
             embed = embedbuildthing("Insufficient Funds", "You do not have enough money in your wallet.", color=discord.Color.red())
             await interaction.response.send_message(embed=embed)
             await self.manager.save()
             return
-        await self.manager.ensure_user(user.id)
-        if not await self.manager.has_wallet(user.id, amount):
+        await self.manager.ensure_user(interaction.guild_id, user.id)
+        if not await self.manager.has_wallet(interaction.guild_id, user.id, amount):
             embed = embedbuildthing("Opponent Funds", f"{user.mention} does not have enough money to coinflip.", color=discord.Color.red())
             await interaction.response.send_message(embed=embed)
             await self.manager.save()
             return
-        view = CoinflipView(self.manager, interaction.user.id, user.id, amount, self.bot)
+        view = CoinflipView(self.manager, interaction.guild_id, interaction.user.id, user.id, amount, self.bot)
         content = f"{interaction.user.mention} challenged {user.mention} to a coinflip for {currency(amount)}."
         await interaction.response.send_message(content=content, view=view)
         view.message = await interaction.original_response()
@@ -498,23 +525,25 @@ class Economy(commands.Cog):
     @app_commands.describe(item="Item to buy")
     @app_commands.choices(item=[app_commands.Choice(name=ITEM_DATA[key]["name"], value=key) for key in SHOP_ITEMS])
     async def shop(self, interaction: discord.Interaction, item: app_commands.Choice[str]) -> None:
+        if not interaction.guild_id:
+            return
         item_key = item.value
         item_data = ITEM_DATA[item_key]
         price = item_data["price"]
         
-        if not await self.manager.has_wallet(interaction.user.id, price):
+        if not await self.manager.has_wallet(interaction.guild_id, interaction.user.id, price):
             embed = embedbuildthing("Insufficient Funds", f"You need {currency(price)} to buy {item_data['name']}.", color=discord.Color.red())
             await interaction.response.send_message(embed=embed)
             await self.manager.save()
             return
         
-        if not await self.manager.deduct_wallet(interaction.user.id, price):
+        if not await self.manager.deduct_wallet(interaction.guild_id, interaction.user.id, price):
             embed = embedbuildthing("Insufficient Funds", f"You need {currency(price)} to buy {item_data['name']}.", color=discord.Color.red())
             await interaction.response.send_message(embed=embed)
             await self.manager.save()
             return
         
-        await self.manager.add_item(interaction.user.id, item_key)
+        await self.manager.add_item(interaction.guild_id, interaction.user.id, item_key)
         embed = embedbuildthing("Purchase Successful", f"Bought {item_data['name']} for {currency(price)}.", color=discord.Color.green())
         await interaction.response.send_message(embed=embed)
         await self.manager.save()
@@ -522,7 +551,7 @@ class Economy(commands.Cog):
         # Check inventory achievements
         achievements_cog = self.bot.get_cog("Achievements")
         if achievements_cog:
-            await achievements_cog.check_inventory_achievements(interaction.user.id)
+            await achievements_cog.check_inventory_achievements(interaction.guild_id, interaction.user.id)
     
     @app_commands.guild_only()
     @app_commands.command(name="robbery", description="Rob a location")
@@ -534,8 +563,10 @@ class Economy(commands.Cog):
         app_commands.Choice(name="Government Laboratory", value="lab"),
     ])
     async def robbery(self, interaction: discord.Interaction, location: app_commands.Choice[str]) -> None:
+        if not interaction.guild_id:
+            return
         location_type = location.value
-        inventory = await self.manager.get_inventory(interaction.user.id)
+        inventory = await self.manager.get_inventory(interaction.guild_id, interaction.user.id)
         
         robbery_configs = {
             "gas_station": {
@@ -586,7 +617,7 @@ class Economy(commands.Cog):
         
         config = robbery_configs[location_type]
         
-        if not await self.manager.has_items(interaction.user.id, config["required_items"]):
+        if not await self.manager.has_items(interaction.guild_id, interaction.user.id, config["required_items"]):
             missing = [ITEM_DATA[item]["name"] for item in config["required_items"] if not inventory.get(item, 0)]
             embed = embedbuildthing("Missing Requirements", f"You need: {', '.join(missing)}", color=discord.Color.red())
             await interaction.response.send_message(embed=embed)
@@ -618,7 +649,7 @@ class Economy(commands.Cog):
         
         await asyncio.sleep(config["time"])
         
-        wallet, bank = await self.manager.get_balances(interaction.user.id)
+        wallet, bank = await self.manager.get_balances(interaction.guild_id, interaction.user.id)
         total_wallet = wallet
         total_bank = bank
         
@@ -628,15 +659,15 @@ class Economy(commands.Cog):
             wallet_penalty = int(total_wallet * config["wallet_penalty"])
             bank_penalty = int(total_bank * config["bank_penalty"])
             
-            await self.manager.deduct_wallet(interaction.user.id, wallet_penalty)
+            await self.manager.deduct_wallet(interaction.guild_id, interaction.user.id, wallet_penalty)
             new_bank = max(0, total_bank - bank_penalty)
             async with self.manager.lock:
-                user = self.manager._ensure_user(interaction.user.id)
+                user = self.manager._ensure_user(interaction.guild_id, interaction.user.id)
                 user["bank"] = new_bank
             
             seized_items = {}
             if config["seize_items"]:
-                seized_items = await self.manager.seize_all_items(interaction.user.id)
+                seized_items = await self.manager.seize_all_items(interaction.guild_id, interaction.user.id)
             
             description = "You were caught! The robbery failed."
             description += f"\nWallet penalty: {currency(wallet_penalty)}"
@@ -648,14 +679,14 @@ class Economy(commands.Cog):
             embed = embedbuildthing("Robbery Failed", description, color=discord.Color.red())
         else:
             payout = random.randint(config["min_payout"], config["max_payout"])
-            await self.manager.add_wallet(interaction.user.id, payout)
+            await self.manager.add_wallet(interaction.guild_id, interaction.user.id, payout)
             embed = embedbuildthing("Robbery Successful", f"You successfully robbed {config['name']} and got {currency(payout)}!", color=discord.Color.green())
             
             # Check smooth criminal achievement
             achievements_cog = self.bot.get_cog("Achievements")
             if achievements_cog:
-                if await achievements_cog.achievements_manager.unlock_achievement(interaction.user.id, "smooth_criminal"):
-                    await achievements_cog._award_achievement(interaction.user.id, "smooth_criminal")
+                if await achievements_cog.achievements_manager.unlock_achievement(interaction.guild_id, interaction.user.id, "smooth_criminal"):
+                    await achievements_cog._award_achievement(interaction.guild_id, interaction.user.id, "smooth_criminal")
         
         await message.edit(embed=embed)
         await self.manager.save()
@@ -663,12 +694,14 @@ class Economy(commands.Cog):
         # Check balance achievements after any money change
         achievements_cog = self.bot.get_cog("Achievements")
         if achievements_cog:
-            await achievements_cog.check_balance_achievements(interaction.user.id)
+            await achievements_cog.check_balance_achievements(interaction.guild_id, interaction.user.id)
     
     @app_commands.guild_only()
     @app_commands.command(name="mug", description="Mug another user")
     @app_commands.describe(user="User to mug", amount="Amount to steal from wallet")
     async def mug(self, interaction: discord.Interaction, user: discord.Member, amount: int) -> None:
+        if not interaction.guild_id:
+            return
         if user.id == interaction.user.id:
             embed = embedbuildthing("Invalid Target", "You cannot mug yourself.", color=discord.Color.red())
             await interaction.response.send_message(embed=embed)
@@ -681,8 +714,8 @@ class Economy(commands.Cog):
             await self.manager.save()
             return
         
-        await self.manager.ensure_user(user.id)
-        wallet, _ = await self.manager.get_balances(user.id)
+        await self.manager.ensure_user(interaction.guild_id, user.id)
+        wallet, _ = await self.manager.get_balances(interaction.guild_id, user.id)
         
         if wallet < amount:
             embed = embedbuildthing("Insufficient Funds", f"{user.mention} only has {currency(wallet)} in their wallet.", color=discord.Color.red())
@@ -690,7 +723,7 @@ class Economy(commands.Cog):
             await self.manager.save()
             return
         
-        inventory = await self.manager.get_inventory(interaction.user.id)
+        inventory = await self.manager.get_inventory(interaction.guild_id, interaction.user.id)
         has_mask = inventory.get("mask", 0) > 0
         has_lpb = inventory.get("license_plate_blocker", 0) > 0
         
@@ -709,14 +742,14 @@ class Economy(commands.Cog):
         if caught:
             embed = embedbuildthing("Mugging Failed", f"You were caught trying to mug {user.mention}!", color=discord.Color.red())
         else:
-            if await self.manager.deduct_wallet(user.id, amount):
-                await self.manager.add_wallet(interaction.user.id, amount)
+            if await self.manager.deduct_wallet(interaction.guild_id, user.id, amount):
+                await self.manager.add_wallet(interaction.guild_id, interaction.user.id, amount)
                 embed = embedbuildthing("Mugging Successful", f"You successfully mugged {user.mention} and stole {currency(amount)}!", color=discord.Color.green())
                 
                 # Check balance achievements
                 achievements_cog = self.bot.get_cog("Achievements")
                 if achievements_cog:
-                    await achievements_cog.check_balance_achievements(interaction.user.id)
+                    await achievements_cog.check_balance_achievements(interaction.guild_id, interaction.user.id)
             else:
                 embed = embedbuildthing("Mugging Failed", f"Failed to steal from {user.mention}.", color=discord.Color.red())
         

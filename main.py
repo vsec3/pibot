@@ -1,6 +1,6 @@
 import discord
 import base64
-from discord.ext import commands
+from discord.ext import commands, tasks
 from config import ECONOMY_FILE, JOBS_FILE, GUILDS_FILE, ACHIEVEMENTS_FILE
 from managers import EconomyManager, JobsManager, GuildsManager, AchievementsManager
 from cogs.economy import Economy
@@ -31,6 +31,28 @@ async def setup_hook():
     await bot.add_cog(Guilds(bot, guilds_manager, economy_manager))
     await bot.add_cog(Achievements(bot, achievements_manager, economy_manager))
 
+statuses = [
+    discord.Activity(type=discord.ActivityType.watching, name=f"Watching The Economy"),
+    discord.Activity(type=discord.ActivityType.watching, name=f"Watching Over Guilds"),
+    discord.Activity(type=discord.ActivityType.watching, name=f"Watching Job Markets"),
+    discord.Activity(type=discord.ActivityType.watching, name=f"Watching Achievements")
+]
+
+@tasks.loop(seconds=5)
+async def cycle_status():
+    count = len(bot.guilds)
+    dynamic_status = discord.Activity(type=discord.ActivityType.watching, name=f"Watching {count} Server{'s' if count != 1 else ''}")
+    all_statuses = [dynamic_status] + statuses
+    cycle_status.current = getattr(cycle_status, "current", 0)
+    await bot.change_presence(activity=all_statuses[cycle_status.current])
+    cycle_status.current = (cycle_status.current + 1) % len(all_statuses)
+
+async def update_status():
+    server_count = len(bot.guilds)
+    await bot.change_presence(
+        activity=discord.Activity(type=discord.ActivityType.watching, name=f"WATCHING.{server_count}.SERVER{'S' if server_count != 1 else ''}")
+    )
+
 @bot.event
 async def on_ready():
     try:
@@ -38,7 +60,17 @@ async def on_ready():
         print("Logged in")
         synced = await bot.tree.sync()
         print(f"Locked in and synced {len(synced)} command{'s' if len(synced) != 1 else ''}")
+        await update_status()
+        cycle_status.start()
     except Exception as e:
         print(f"Error syncing commands: {e}")
+
+@bot.event
+async def on_guild_join(guild: discord.Guild):
+    await update_status()
+
+@bot.event
+async def on_guild_remove(guild: discord.Guild):
+    await update_status()
 
 bot.run(TOKEN)
